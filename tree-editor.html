@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Visual Tree Builder | Studio Admin</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="config.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .tree-line { border-left: 1px solid #374151; margin-left: 10px; padding-left: 10px; }
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-gray-900 h-screen flex flex-col text-white overflow-hidden" x-data="visualTree()">
+
+    <!-- Toolbar -->
+    <header class="bg-gray-800 border-b border-gray-700 p-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-4">
+            <a href="index.html" class="text-gray-400 hover:text-white text-sm flex items-center gap-1">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+                Back
+            </a>
+            <h1 class="font-bold text-lg tracking-wide">Visual Product Builder</h1>
+        </div>
+        
+        <div class="flex gap-3">
+            <div x-show="status" x-transition class="flex items-center gap-2 px-3">
+                <span class="w-2 h-2 rounded-full" :class="statusType === 'success' ? 'bg-green-500' : 'bg-red-500'"></span>
+                <span class="text-xs font-mono" x-text="status"></span>
+            </div>
+            <button @click="saveTree()" class="px-6 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded text-xs font-bold uppercase tracking-wider transition-colors shadow-lg">
+                Save Changes
+            </button>
+        </div>
+    </header>
+
+    <main class="flex-1 flex overflow-hidden">
+        
+        <!-- Left: Tree Navigator -->
+        <div class="w-1/3 bg-gray-800 border-r border-gray-700 flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center bg-gray-800 z-10">
+                <span class="text-xs font-bold uppercase text-gray-400">Hierarchy</span>
+                <button @click="addRoot()" class="text-[10px] bg-green-600 hover:bg-green-500 px-2 py-1 rounded font-bold uppercase">+ New Root</button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4">
+                <template x-for="(root, idx) in tree" :key="root._temp_id || root.id || idx">
+                    <div class="mb-4">
+                        <!-- Root Node -->
+                        <div @click="select(root)" 
+                             class="flex items-center gap-2 p-2 rounded cursor-pointer transition-colors border border-transparent"
+                             :class="selected === root ? 'bg-blue-900/50 border-blue-500/50' : 'hover:bg-gray-700'">
+                            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                            <span class="text-sm font-bold truncate" x-text="root.name || 'Untitled Root'"></span>
+                        </div>
+
+                        <!-- Level 2 -->
+                        <div class="tree-line">
+                            <template x-for="(l2, idx2) in root.sub_products" :key="l2._temp_id || l2.id || idx2">
+                                <div>
+                                    <div @click="select(l2)" 
+                                         class="flex items-center gap-2 p-2 rounded cursor-pointer transition-colors border border-transparent"
+                                         :class="selected === l2 ? 'bg-blue-900/50 border-blue-500/50' : 'hover:bg-gray-700'">
+                                        <span class="w-1.5 h-1.5 rounded-full bg-blue-400"></span>
+                                        <span class="text-xs truncate" x-text="l2.name || 'Untitled Category'"></span>
+                                    </div>
+
+                                    <!-- Level 3 -->
+                                    <div class="tree-line" x-show="l2.sub_products && l2.sub_products.length">
+                                        <template x-for="(l3, idx3) in l2.sub_products" :key="l3._temp_id || l3.id || idx3">
+                                            <div>
+                                                <div @click="select(l3)" 
+                                                     class="flex items-center gap-2 p-2 rounded cursor-pointer transition-colors border border-transparent"
+                                                     :class="selected === l3 ? 'bg-blue-900/50 border-blue-500/50' : 'hover:bg-gray-700'">
+                                                    <span class="w-1 h-1 rounded-full bg-gray-400"></span>
+                                                    <span class="text-xs text-gray-300 truncate" x-text="l3.name || 'Untitled Item'"></span>
+                                                </div>
+
+                                                <!-- Level 4 (Deepest usually) -->
+                                                <div class="tree-line" x-show="l3.sub_products && l3.sub_products.length">
+                                                    <template x-for="(l4, idx4) in l3.sub_products" :key="l4._temp_id || l4.id || idx4">
+                                                        <div @click="select(l4)" 
+                                                             class="flex items-center gap-2 p-2 rounded cursor-pointer transition-colors border border-transparent"
+                                                             :class="selected === l4 ? 'bg-blue-900/50 border-blue-500/50' : 'hover:bg-gray-700'">
+                                                            <span class="text-[10px] text-gray-500 truncate" x-text="l4.name || 'Option'"></span>
+                                                        </div>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <button @click="addChild(root)" class="mt-1 text-[10px] text-gray-500 hover:text-white flex items-center gap-1 px-2 py-1 rounded hover:bg-gray-700 w-full text-left">
+                                <span class="text-lg leading-none">+</span> Add Category
+                            </button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Right: Editor Panel -->
+        <div class="flex-1 bg-gray-900 p-10 overflow-y-auto">
+            <template x-if="selected">
+                <div class="max-w-2xl mx-auto space-y-6">
+                    <div class="flex justify-between items-start border-b border-gray-700 pb-4">
+                        <div>
+                            <h2 class="text-2xl font-bold" x-text="selected.name || 'New Product'"></h2>
+                            <p class="text-xs text-gray-500 font-mono mt-1" x-text="'ID: ' + (selected.id || 'Pending')"></p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button @click="addChild(selected)" class="bg-gray-700 hover:bg-gray-600 px-3 py-2 rounded text-xs font-bold uppercase">Add Child</button>
+                            <button @click="deleteNode()" class="bg-red-900/50 hover:bg-red-900 text-red-200 px-3 py-2 rounded text-xs font-bold uppercase">Delete</button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-6">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Name</label>
+                            <input type="text" x-model="selected.name" class="w-full bg-gray-800 border border-gray-700 rounded p-3 focus:border-blue-500 outline-none">
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Description</label>
+                            <textarea x-model="selected.description" rows="3" class="w-full bg-gray-800 border border-gray-700 rounded p-3 focus:border-blue-500 outline-none"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Price</label>
+                            <input type="number" x-model="selected.price" class="w-full bg-gray-800 border border-gray-700 rounded p-3 focus:border-blue-500 outline-none">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Attribute Name (If Child)</label>
+                            <input type="text" x-model="selected.attribute_name" placeholder="e.g. width" class="w-full bg-gray-800 border border-gray-700 rounded p-3 focus:border-blue-500 outline-none">
+                            <p class="text-[10px] text-gray-500 mt-1">Only if this item is an option for a parent attribute.</p>
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Defines Attributes (Comma Separated)</label>
+                            <input type="text" x-model="selected.attributes_list" placeholder="e.g. width, color" class="w-full bg-gray-800 border border-gray-700 rounded p-3 focus:border-blue-500 outline-none">
+                            <p class="text-[10px] text-gray-500 mt-1">If this product has selectable options (children).</p>
+                        </div>
+
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Image</label>
+                            <div class="flex gap-4 items-center">
+                                <div class="w-20 h-20 bg-gray-800 rounded border border-gray-700 overflow-hidden shrink-0">
+                                    <img :src="selected.image_urls" class="w-full h-full object-cover" x-show="selected.image_urls">
+                                </div>
+                                <div class="flex-1">
+                                    <input type="text" x-model="selected.image_urls" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-xs mb-2" placeholder="Image URL">
+                                    <input type="file" @change="uploadImage($event)" class="text-xs text-gray-400">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </template>
+            
+            <div x-show="!selected" class="h-full flex items-center justify-center text-gray-600">
+                <p>Select a node from the tree to edit</p>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        function visualTree() {
+            return {
+                tree: [],
+                selected: null,
+                status: '',
+                statusType: 'success',
+
+                async init() {
+                    await this.loadTree();
+                },
+
+                async loadTree() {
+                    try {
+                        const res = await fetch(`${API_BASE_URL}/products/tree`);
+                        const data = await res.json();
+                        
+                        // Normalize: Flatten dynamic attributes into sub_products for editing
+                        const normalize = (nodes) => nodes.map(n => {
+                            n.sub_products = n.sub_products || [];
+                            // Check for dynamic keys based on attributes
+                            if (n.attributes && Array.isArray(n.attributes)) {
+                                n.attributes.forEach(attr => {
+                                    if (n[attr] && Array.isArray(n[attr])) {
+                                        n.sub_products.push(...n[attr]);
+                                        delete n[attr]; // Remove key to avoid duplication
+                                    }
+                                });
+                            }
+                            // Recurse
+                            if (n.sub_products.length > 0) n.sub_products = normalize(n.sub_products);
+                            
+                            // Ensure attributes_list is string for input (optional, or handle as array)
+                            // Keeping as array in model, but input binds to string? 
+                            // Let's handle array <-> string conversion in save/load if needed, 
+                            // but Alpine x-model on text input with array joins automatically with commas usually? No.
+                            // We'll leave it as is, user inputs comma string, we split on save.
+                            return n;
+                        });
+
+                        this.tree = normalize(data);
+                    } catch (e) {
+                        console.error(e);
+                        this.showStatus('Error loading tree', 'error');
+                    }
+                },
+
+                select(node) {
+                    this.selected = node;
+                },
+
+                addRoot() {
+                    const newRoot = { name: 'New Root', sub_products: [], _temp_id: Date.now() };
+                    this.tree.push(newRoot);
+                    this.select(newRoot);
+                },
+
+                addChild(parent) {
+                    if (!parent.sub_products) parent.sub_products = [];
+                    const child = { name: 'New Item', sub_products: [], _temp_id: Date.now() };
+                    parent.sub_products.push(child);
+                    // Auto expand logic is implicit since we render all
+                    this.select(child);
+                },
+
+                deleteNode() {
+                    if (!this.selected) return;
+                    if (!confirm('Delete this node and all children?')) return;
+                    
+                    // Recursive find and delete
+                    const remove = (list) => {
+                        const idx = list.indexOf(this.selected);
+                        if (idx > -1) {
+                            list.splice(idx, 1);
+                            return true;
+                        }
+                        for (let item of list) {
+                            if (item.sub_products && remove(item.sub_products)) return true;
+                        }
+                        return false;
+                    };
+
+                    remove(this.tree);
+                    this.selected = null;
+                },
+
+                async uploadImage(e) {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    
+                    try {
+                        this.showStatus('Uploading...', 'success');
+                        const res = await fetch(`${API_BASE_URL}/upload`, {
+                            method: 'POST',
+                            body: formData
+                        });
+                        const data = await res.json();
+                        if (data.url) {
+                            this.selected.image_urls = data.url;
+                            this.showStatus('Image Uploaded', 'success');
+                        }
+                    } catch(err) {
+                        this.showStatus('Upload Failed', 'error');
+                    }
+                },
+
+                async saveTree() {
+                    this.showStatus('Saving...', 'success');
+                    
+                    // Deep copy to prepare for save (handle attribute string splitting)
+                    const prepare = (nodes) => nodes.map(n => {
+                        const copy = { ...n };
+                        // Ensure attributes_list is array
+                        if (typeof copy.attributes_list === 'string') {
+                            copy.attributes_list = copy.attributes_list.split(',').map(s => s.trim()).filter(s => s);
+                        }
+                        // Clean temp fields
+                        delete copy._temp_id;
+                        delete copy.fabrics; // Read-only
+                        delete copy.fabric_images; // Read-only
+                        
+                        if (copy.sub_products) copy.sub_products = prepare(copy.sub_products);
+                        return copy;
+                    });
+
+                    try {
+                        const payload = prepare(this.tree);
+                        const res = await fetch(`${API_BASE_URL}/products/tree`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(payload)
+                        });
+
+                        if (!res.ok) throw new Error(await res.text());
+                        
+                        await this.loadTree(); // Reload to get generated IDs
+                        this.showStatus('Saved Successfully', 'success');
+                    } catch (e) {
+                        this.showStatus('Save Failed', 'error');
+                        console.error(e);
+                    }
+                },
+
+                showStatus(msg, type) {
+                    this.status = msg;
+                    this.statusType = type;
+                    setTimeout(() => { if(this.status === msg) this.status = ''; }, 3000);
+                }
+            }
+        }
+    </script>
+</body>
+</html>

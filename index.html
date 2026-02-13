@@ -5,6 +5,7 @@
     <title>Studio Admin | Product & Fabric Engine</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="config.js"></script>
     <style>
         [x-cloak] { display: none !important; }
         .admin-card { @apply bg-white border border-gray-200 rounded-xl p-5 mb-6 shadow-sm; }
@@ -103,6 +104,18 @@
                     </div>
 
                     <button @click="createProductNode()" class="btn-primary">Save to Tree</button>
+                </div>
+            </div>
+
+            <div class="admin-card">
+                <h3 class="font-bold text-xs uppercase mb-4 border-b pb-2">Bulk JSON Operations</h3>
+                <div class="space-y-2">
+                    <textarea x-model="jsonBlueprint" class="input-field h-32 font-mono text-[10px]" placeholder="Paste JSON tree here..."></textarea>
+                    <div class="flex gap-2">
+                        <button @click="loadCurrentTree()" class="btn-primary bg-gray-500 hover:bg-gray-600">Export JSON</button>
+                        <button @click="saveBlueprint()" class="btn-primary">Import / Update</button>
+                    </div>
+                    <a href="tree-editor.html" class="block text-center text-[10px] text-blue-500 underline mt-3 hover:text-blue-700">Open Full Screen Editor</a>
                 </div>
             </div>
         </aside>
@@ -209,6 +222,7 @@
                 fabricForm: { name: '', group_id: '', image: null },
                 productForm: { name: '', parent_id: '', attributes: '', fabric_group_id: '', attribute_name: '', price: '', image: null },
                 
+                jsonBlueprint: '',
                 // Data
                 fabricGroups: [],
                 flatProducts: [], // Used for parent selection dropdown
@@ -227,12 +241,12 @@
                 },
 
                 async refreshAll() {
-                    const treeRes = await fetch('https://levlabs-backend-updated-production.up.railway.app/products/tree');
+                    const treeRes = await fetch(`${API_BASE_URL}/products/tree`);
                     this.tree = await treeRes.json();
                     this.currentNodes = this.tree;
                     
                     // Fetch groups for dropdown
-                    const groupRes = await fetch('https://levlabs-backend-updated-production.up.railway.app/fabric-groups');
+                    const groupRes = await fetch(`${API_BASE_URL}/fabric-groups`);
                     this.fabricGroups = await groupRes.json();
                     
                     // Flatten tree for parent selector
@@ -250,7 +264,7 @@
                 },
 
                 async createGroup() {
-                    await fetch('https://levlabs-backend-updated-production.up.railway.app/fabric-groups', {
+                    await fetch(`${API_BASE_URL}/fabric-groups`, {
                         method: 'POST',
                         headers: {'Content-Type': 'application/json'},
                         body: JSON.stringify(this.groupForm)
@@ -267,7 +281,7 @@
                         formData.append('image', this.fabricForm.image);
                     }
 
-                    await fetch('https://levlabs-backend-updated-production.up.railway.app/fabrics', {
+                    await fetch(`${API_BASE_URL}/fabrics`, {
                         method: 'POST',
                         body: formData
                     });
@@ -290,7 +304,7 @@
                     formData.append('price', this.productForm.price || 0);
                     if (this.productForm.image) formData.append('image', this.productForm.image);
 
-                    await fetch('https://levlabs-backend-updated-production.up.railway.app/products', {
+                    await fetch(`${API_BASE_URL}/products`, {
                         method: 'POST',
                         body: formData
                     });
@@ -303,9 +317,39 @@
                     alert('Tree Updated');
                 },
 
+                loadCurrentTree() {
+                    // Clean tree to remove read-only fields and presigned URLs before export
+                    const clean = (nodes) => nodes.map(n => {
+                        const { image_urls, fabrics, fabric_images, ...rest } = n;
+                        if (rest.sub_products) rest.sub_products = clean(rest.sub_products);
+                        if (rest.attributes && Array.isArray(rest.attributes)) {
+                            rest.attributes.forEach(attr => {
+                                if (Array.isArray(rest[attr])) rest[attr] = clean(rest[attr]);
+                            });
+                        }
+                        return rest;
+                    });
+                    this.jsonBlueprint = JSON.stringify(clean(this.tree), null, 2);
+                },
+
+                async saveBlueprint() {
+                    try {
+                        const data = JSON.parse(this.jsonBlueprint);
+                        await fetch(`${API_BASE_URL}/products/tree`, {
+                            method: 'PUT',
+                            headers: {'Content-Type': 'application/json'},
+                            body: JSON.stringify(data)
+                        });
+                        await this.refreshAll();
+                        alert('Bulk Update Successful');
+                    } catch(e) {
+                        alert('Error: ' + e.message);
+                    }
+                },
+
                 async deleteProduct(id) {
                     if(!confirm('Delete this product and all children?')) return;
-                    await fetch(`https://levlabs-backend-updated-production.up.railway.app/products/${id}`, {
+                    await fetch(`${API_BASE_URL}/products/${id}`, {
                         method: 'DELETE'
                     });
                     await this.refreshAll();
