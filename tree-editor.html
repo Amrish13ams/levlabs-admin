@@ -145,14 +145,27 @@
                         </div>
 
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Image</label>
-                            <div class="flex gap-4 items-center">
-                                <div class="w-20 h-20 bg-gray-800 rounded border border-gray-700 overflow-hidden shrink-0">
-                                    <img :src="selected.image_urls" class="w-full h-full object-cover" x-show="selected.image_urls">
-                                </div>
-                                <div class="flex-1">
-                                    <input type="text" x-model="selected.image_urls" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-xs mb-2" placeholder="Image URL">
-                                    <input type="file" @change="uploadImage($event)" class="text-xs text-gray-400">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-2">Fabric Images</label>
+                            <div class="space-y-3">
+                                <template x-for="fabric in availableFabrics" :key="fabric.id">
+                                    <div class="flex gap-4 items-center bg-gray-800 p-2 rounded border border-gray-700">
+                                        <div class="w-12 h-12 bg-gray-900 rounded overflow-hidden shrink-0">
+                                            <img :src="selected.fabric_images && selected.fabric_images[fabric.id]" class="w-full h-full object-cover" x-show="selected.fabric_images && selected.fabric_images[fabric.id]">
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-bold text-gray-300 mb-1" x-text="fabric.name"></p>
+                                            <div class="flex gap-2">
+                                                <input type="text" x-model="selected.fabric_images[fabric.id]" class="flex-1 bg-gray-900 border border-gray-600 rounded px-2 py-1 text-[10px]" placeholder="URL">
+                                                <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-[10px] uppercase font-bold">
+                                                    Upload
+                                                    <input type="file" class="hidden" @change="uploadImage($event, fabric.id)">
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="availableFabrics.length === 0" class="text-xs text-gray-500 italic">
+                                    No fabrics found in tree root. Add a Fabric Group to the root node first.
                                 </div>
                             </div>
                         </div>
@@ -171,6 +184,7 @@
             return {
                 tree: [],
                 selected: null,
+                availableFabrics: [],
                 status: '',
                 statusType: 'success',
 
@@ -183,6 +197,9 @@
                         const res = await fetch(`${API_BASE_URL}/products/tree`);
                         const data = await res.json();
                         
+                        // Extract available fabrics from root(s)
+                        this.availableFabrics = data.flatMap(r => r.fabrics || []);
+
                         // Normalize: Flatten dynamic attributes into sub_products for editing
                         const normalize = (nodes) => nodes.map(n => {
                             n.sub_products = n.sub_products || [];
@@ -195,6 +212,10 @@
                                     }
                                 });
                             }
+                            
+                            // Ensure fabric_images object exists
+                            if (!n.fabric_images) n.fabric_images = {};
+
                             // Recurse
                             if (n.sub_products.length > 0) n.sub_products = normalize(n.sub_products);
                             
@@ -252,7 +273,7 @@
                     this.selected = null;
                 },
 
-                async uploadImage(e) {
+                async uploadImage(e, fabricId) {
                     const file = e.target.files[0];
                     if (!file) return;
                     
@@ -267,7 +288,7 @@
                         });
                         const data = await res.json();
                         if (data.url) {
-                            this.selected.image_urls = data.url;
+                            this.selected.fabric_images[fabricId] = data.url;
                             this.showStatus('Image Uploaded', 'success');
                         }
                     } catch(err) {
@@ -288,7 +309,6 @@
                         // Clean temp fields
                         delete copy._temp_id;
                         delete copy.fabrics; // Read-only
-                        delete copy.fabric_images; // Read-only
                         
                         if (copy.sub_products) copy.sub_products = prepare(copy.sub_products);
                         return copy;

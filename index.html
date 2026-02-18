@@ -98,11 +98,6 @@
                         <input type="number" x-model="productForm.price" class="input-field" placeholder="0.00">
                     </div>
 
-                    <div>
-                        <label class="label-text">Upload Image</label>
-                        <input type="file" x-ref="productFile" @change="productForm.image = $event.target.files[0]" class="input-field">
-                    </div>
-
                     <button @click="createProductNode()" class="btn-primary">Save to Tree</button>
                 </div>
             </div>
@@ -130,6 +125,16 @@
                         </button>
                         <h4 class="text-[10px] font-black uppercase tracking-[0.2em]" x-text="viewTitle"></h4>
                         <div class="w-10"></div>
+                    </div>
+
+                    <!-- Fabric Selector -->
+                    <div class="px-8 mb-4" x-show="availableFabrics.length > 0">
+                        <label class="label-text mb-1">Preview Fabric</label>
+                        <select x-model="selectedFabricId" class="input-field text-xs py-1">
+                            <template x-for="f in availableFabrics" :key="f.id">
+                                <option :value="f.id" x-text="f.name"></option>
+                            </template>
+                        </select>
                     </div>
 
                     <!-- Style Selector (Visible when inside a Category like Lapel) -->
@@ -167,7 +172,7 @@
                                 <div @click="drillDown(item)" class="group border border-gray-100 rounded-2xl p-4 flex items-center gap-4 cursor-pointer hover:border-black transition-all">
                                     <button @click.stop="deleteProduct(item.id)" class="text-red-400 hover:text-red-600 font-bold text-[10px] uppercase px-2">Del</button>
                                     <div class="w-14 h-14 bg-gray-50 rounded-xl overflow-hidden shrink-0">
-                                        <img :src="item.image_urls" class="w-full h-full object-cover">
+                                        <img :src="getImg(item)" class="w-full h-full object-cover">
                                     </div>
                                     <div class="flex-1">
                                         <p class="text-[11px] font-bold uppercase tracking-tight" x-text="item.name"></p>
@@ -183,7 +188,7 @@
                             <!-- Selected Style Preview -->
                             <div x-show="selectedStyle" class="border border-gray-200 rounded-3xl p-5 flex gap-5 bg-gray-50">
                                 <div class="w-20 h-20 bg-gray-100 rounded-2xl overflow-hidden shrink-0">
-                                    <img :src="selectedStyle?.image_urls" class="w-full h-full object-cover">
+                                    <img :src="getImg(selectedStyle)" class="w-full h-full object-cover">
                                 </div>
                                 <div class="flex flex-col justify-center">
                                     <h5 class="text-sm font-black italic uppercase" x-text="selectedStyle?.name"></h5>
@@ -220,13 +225,15 @@
                 // CRUD Forms
                 groupForm: { name: '' },
                 fabricForm: { name: '', group_id: '', image: null },
-                productForm: { name: '', parent_id: '', attributes: '', fabric_group_id: '', attribute_name: '', price: '', image: null },
+                productForm: { name: '', parent_id: '', attributes: '', fabric_group_id: '', attribute_name: '', price: '' },
                 
                 jsonBlueprint: '',
                 // Data
                 fabricGroups: [],
                 flatProducts: [], // Used for parent selection dropdown
                 tree: [],
+                availableFabrics: [],
+                selectedFabricId: null,
                 
                 // UI State
                 currentNodes: [],
@@ -251,6 +258,12 @@
                     
                     // Flatten tree for parent selector
                     this.flatProducts = this.flattenTree(this.tree);
+
+                    // Extract fabrics from root(s) for preview
+                    this.availableFabrics = this.tree.flatMap(r => r.fabrics || []);
+                    if (this.availableFabrics.length > 0 && !this.selectedFabricId) {
+                        this.selectedFabricId = this.availableFabrics[0].id;
+                    }
                 },
 
                 flattenTree(nodes, depth = 0, list = []) {
@@ -302,7 +315,6 @@
                     if (this.productForm.fabric_group_id) formData.append('fabric_group_id', this.productForm.fabric_group_id);
                     if (this.productForm.attribute_name) formData.append('attribute_name', this.productForm.attribute_name);
                     formData.append('price', this.productForm.price || 0);
-                    if (this.productForm.image) formData.append('image', this.productForm.image);
 
                     await fetch(`${API_BASE_URL}/products`, {
                         method: 'POST',
@@ -311,8 +323,6 @@
                     this.productForm.name = '';
                     this.productForm.attributes = '';
                     this.productForm.price = '';
-                    this.productForm.image = null;
-                    this.$refs.productFile.value = '';
                     await this.refreshAll();
                     alert('Tree Updated');
                 },
@@ -320,7 +330,7 @@
                 loadCurrentTree() {
                     // Clean tree to remove read-only fields and presigned URLs before export
                     const clean = (nodes) => nodes.map(n => {
-                        const { image_urls, fabrics, fabric_images, ...rest } = n;
+                        const { fabrics, ...rest } = n; // Keep fabric_images, remove fabrics list (read-only from group)
                         if (rest.sub_products) rest.sub_products = clean(rest.sub_products);
                         if (rest.attributes && Array.isArray(rest.attributes)) {
                             rest.attributes.forEach(attr => {
@@ -382,6 +392,15 @@
                     this.viewTitle = prev.title;
                     this.activeCategory = prev.cat;
                     this.activeAttr = null;
+                },
+
+                getImg(node) {
+                    if (!node || !node.fabric_images) return '';
+                    if (this.selectedFabricId && node.fabric_images[this.selectedFabricId]) {
+                        return node.fabric_images[this.selectedFabricId];
+                    }
+                    const values = Object.values(node.fabric_images);
+                    return values.length > 0 ? values[0] : '';
                 }
             }
         }
