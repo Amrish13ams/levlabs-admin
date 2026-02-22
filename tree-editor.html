@@ -155,14 +155,43 @@
                         </div>
 
                         <div class="col-span-2">
-                            <label class="block text-xs font-bold uppercase text-gray-500 mb-1">Image</label>
-                            <div class="flex gap-4 items-center">
-                                <div class="w-20 h-20 bg-gray-800 rounded border border-gray-700 overflow-hidden shrink-0">
-                                    <img :src="selected.image_urls" class="w-full h-full object-cover" x-show="selected.image_urls">
-                                </div>
-                                <div class="flex-1">
-                                    <input type="text" x-model="selected.image_urls" class="w-full bg-gray-800 border border-gray-700 rounded p-2 text-xs mb-2" placeholder="Image URL">
-                                    <input type="file" @change="uploadImage($event)" class="text-xs text-gray-400">
+                            <label class="block text-xs font-bold uppercase text-gray-500 mb-2">Fabric Images</label>
+                            <div class="space-y-3">
+                                <template x-for="fabric in getAvailableFabrics()" :key="fabric.id">
+                                    <div class="relative bg-gray-800 border border-gray-700 rounded p-2 flex items-center gap-3"
+                                         @dragover.prevent="dragOverFabricId = fabric.id">
+                                        <!-- Drag Overlay -->
+                                        <div x-show="dragOverFabricId === fabric.id" 
+                                             @dragleave="dragOverFabricId = null"
+                                             @dragover.prevent 
+                                             @drop.prevent="handleDrop($event, fabric.id)"
+                                             class="absolute inset-0 bg-blue-500/20 border-2 border-blue-500 rounded z-20 flex items-center justify-center backdrop-blur-sm">
+                                             <span class="text-[10px] font-bold text-white bg-gray-900/80 px-2 py-1 rounded shadow-lg">Drop to Upload</span>
+                                        </div>
+
+                                        <div class="w-10 h-10 bg-gray-900 rounded overflow-hidden shrink-0 border border-gray-600">
+                                            <img :src="selected.fabric_images && selected.fabric_images[fabric.id]" class="w-full h-full object-cover" x-show="selected.fabric_images && selected.fabric_images[fabric.id]">
+                                        </div>
+                                        <div class="flex-1 min-w-0">
+                                            <p class="text-xs font-bold text-gray-300" x-text="fabric.name"></p>
+                                            <input type="text" :value="selected.fabric_images ? selected.fabric_images[fabric.id] : ''" @input="setFabricImage(fabric.id, $event.target.value)" class="w-full bg-transparent border-none text-[10px] text-gray-500 focus:text-white p-0 focus:ring-0" placeholder="Image URL">
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            <label class="cursor-pointer bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded text-[10px] text-white transition-colors">
+                                                Upload
+                                                <input type="file" class="hidden" @change="uploadFabricImage($event, fabric.id)">
+                                            </label>
+                                            <button x-show="selected.fabric_images && selected.fabric_images[fabric.id]" 
+                                                    @click="removeFabricImage(fabric.id)"
+                                                    class="bg-red-900/50 hover:bg-red-900 text-red-200 px-2 py-1 rounded text-[10px] transition-colors"
+                                                    title="Remove Image">
+                                                &times;
+                                            </button>
+                                        </div>
+                                    </div>
+                                </template>
+                                <div x-show="getAvailableFabrics().length === 0" class="text-[10px] text-gray-500 italic p-2 border border-dashed border-gray-700 rounded">
+                                    No fabrics available. Assign a Fabric Group to the Root product first.
                                 </div>
                             </div>
                         </div>
@@ -182,6 +211,7 @@
                 tree: [],
                 fabricGroups: [],
                 selected: null,
+                dragOverFabricId: null,
                 status: '',
                 statusType: 'success',
 
@@ -208,14 +238,17 @@
                         const normalize = (nodes) => nodes.map(n => {
                             n.sub_products = n.sub_products || [];
                             // Check for dynamic keys based on attributes
-                            if (n.attributes && Array.isArray(n.attributes)) {
-                                n.attributes.forEach(attr => {
-                                    if (n[attr] && Array.isArray(n[attr])) {
-                                        n.sub_products.push(...n[attr]);
-                                        delete n[attr]; // Remove key to avoid duplication
-                                    }
-                                });
-                            }
+                            n.attributes_list = (n.attributes && Array.isArray(n.attributes)) ? n.attributes.join(', ') : '';
+
+                            // Merge all dynamic attribute arrays (declared or undeclared) into sub_products
+                            const reserved = ['sub_products', 'fabrics', 'attributes'];
+                            Object.keys(n).forEach(key => {
+                                if (!reserved.includes(key) && Array.isArray(n[key])) {
+                                    n.sub_products.push(...n[key]);
+                                    delete n[key];
+                                }
+                            });
+
                             // Recurse
                             if (n.sub_products.length > 0) n.sub_products = normalize(n.sub_products);
                             
@@ -239,22 +272,32 @@
                 },
 
                 addRoot() {
-                    const newRoot = { name: 'New Root', sub_products: [], _temp_id: Date.now() };
+                    const newRoot = { name: 'New Root', sub_products: [], fabric_images: {}, attributes_list: '', attribute_name: '', _temp_id: Date.now() };
                     this.tree.push(newRoot);
                     this.select(newRoot);
                 },
 
                 addChild(parent) {
                     if (!parent.sub_products) parent.sub_products = [];
-                    const child = { name: 'New Item', sub_products: [], _temp_id: Date.now() };
+                    const child = { name: 'New Item', sub_products: [], fabric_images: {}, attributes_list: '', attribute_name: '', _temp_id: Date.now() };
                     parent.sub_products.push(child);
                     // Auto expand logic is implicit since we render all
                     this.select(child);
                 },
 
-                deleteNode() {
+                async deleteNode() {
                     if (!this.selected) return;
                     if (!confirm('Delete this node and all children?')) return;
+                    
+                    if (this.selected.id) {
+                        try {
+                            const res = await fetch(`${API_BASE_URL}/products/${this.selected.id}`, { method: 'DELETE' });
+                            if (!res.ok) throw new Error('Delete failed');
+                        } catch (e) {
+                            this.showStatus('Error deleting node', 'error');
+                            return;
+                        }
+                    }
                     
                     // Recursive find and delete
                     const remove = (list) => {
@@ -273,23 +316,60 @@
                     this.selected = null;
                 },
 
-                async uploadImage(e) {
+                getAvailableFabrics() {
+                    if (!this.selected) return [];
+                    // Find the root of the currently selected node to get its fabrics
+                    const findRoot = (nodes, target) => {
+                        for (let node of nodes) {
+                            if (node === target) return node;
+                            if (this.containsNode(node, target)) return node;
+                        }
+                        return null;
+                    };
+                    const root = findRoot(this.tree, this.selected);
+                    return root ? (root.fabrics || []) : [];
+                },
+
+                containsNode(parent, target) {
+                    if (parent === target) return true;
+                    if (parent.sub_products) {
+                        return parent.sub_products.some(child => this.containsNode(child, target));
+                    }
+                    return false;
+                },
+
+                setFabricImage(fabricId, url) {
+                    if (!this.selected.fabric_images) this.selected.fabric_images = {};
+                    this.selected.fabric_images[fabricId] = url;
+                },
+
+                removeFabricImage(fabricId) {
+                    if (this.selected.fabric_images) {
+                        this.selected.fabric_images[fabricId] = "";
+                    }
+                },
+
+                handleDrop(e, fabricId) {
+                    this.dragOverFabricId = null;
+                    const file = e.dataTransfer.files[0];
+                    if (file) this.processUpload(file, fabricId);
+                },
+
+                async uploadFabricImage(e, fabricId) {
                     const file = e.target.files[0];
-                    if (!file) return;
-                    
+                    if (file) this.processUpload(file, fabricId);
+                },
+
+                async processUpload(file, fabricId) {
                     const formData = new FormData();
                     formData.append('image', file);
-                    
                     try {
                         this.showStatus('Uploading...', 'success');
-                        const res = await fetch(`${API_BASE_URL}/upload`, {
-                            method: 'POST',
-                            body: formData
-                        });
+                        const res = await fetch(`${API_BASE_URL}/upload`, { method: 'POST', body: formData });
                         const data = await res.json();
                         if (data.url) {
-                            this.selected.image_urls = data.url;
-                            this.showStatus('Image Uploaded', 'success');
+                            this.setFabricImage(fabricId, data.url);
+                            this.showStatus('Uploaded', 'success');
                         }
                     } catch(err) {
                         this.showStatus('Upload Failed', 'error');
@@ -306,10 +386,10 @@
                         if (typeof copy.attributes_list === 'string') {
                             copy.attributes_list = copy.attributes_list.split(',').map(s => s.trim()).filter(s => s);
                         }
+                        delete copy.attributes;
                         // Clean temp fields
                         delete copy._temp_id;
                         delete copy.fabrics; // Read-only
-                        delete copy.fabric_images; // Read-only
                         if (copy.fabric_group_id === "") copy.fabric_group_id = null;
                         
                         if (copy.sub_products) copy.sub_products = prepare(copy.sub_products);
